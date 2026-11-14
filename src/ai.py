@@ -20,7 +20,7 @@ def monotonicity(board):
     paremmassa järjestyksessä laatat ovat.
     """
     total = 0
-    lines = [row for row in board] + [list(col) for col in zip(*board)]
+    lines = list(board) + [list(col) for col in zip(*board)]
     for line in lines:
         increasing = 0
         decreasing = 0
@@ -50,7 +50,15 @@ def evaluate(board):
             + MONOTONICITY_WEIGHT * monotonicity(board))
 
 
-def expectimax(board, depth, is_max_turn):
+def board_key(board):
+    """Muuttaa laudan muotoon, jota voi käyttää hajautustaulun avaimena.
+
+    Lista ei kelpaa dictin avaimeksi, mutta tuple kelpaa.
+    """
+    return tuple(tuple(row) for row in board)
+
+
+def expectimax(board, depth, is_max_turn, cache=None):
     """Laskee laudan arvon expectimax-algoritmilla.
 
     Args:
@@ -58,6 +66,8 @@ def expectimax(board, depth, is_max_turn):
         depth: montako tasoa vielä lasketaan eteenpäin.
         is_max_turn: True, jos on tekoälyn vuoro (max-solmu),
             False, jos on satunnaisen laatan vuoro (chance-solmu).
+        cache: hajautustaulu (dict), johon tallennetaan jo laskettujen
+            tilanteiden arvot. Jos None, välimuistia ei käytetä.
 
     Returns:
         Laudan arvo lukuna.
@@ -65,29 +75,48 @@ def expectimax(board, depth, is_max_turn):
     if depth == 0:
         return evaluate(board)
 
-    if is_max_turn:
-        best = None
-        for direction in DIRECTIONS:
-            new_board, _, changed = move(board, direction)
-            if not changed:
-                continue
-            value = expectimax(new_board, depth - 1, False)
-            if best is None or value > best:
-                best = value
-        # Jos siirtoja ei ole, peli on hävitty.
-        return best if best is not None else evaluate(board)
+    key = None
+    if cache is not None:
+        key = (board_key(board), depth, is_max_turn)
+        if key in cache:
+            return cache[key]
 
+    if is_max_turn:
+        value = _max_value(board, depth, cache)
+    else:
+        value = _chance_value(board, depth, cache)
+
+    if cache is not None:
+        cache[key] = value
+    return value
+
+
+def _max_value(board, depth, cache):
+    """Max-solmu: paras arvo tekoälyn kaikista mahdollisista siirroista."""
+    best = None
+    for direction in DIRECTIONS:
+        new_board, _, changed = move(board, direction)
+        if not changed:
+            continue
+        value = expectimax(new_board, depth - 1, False, cache)
+        if best is None or value > best:
+            best = value
+    # Jos siirtoja ei ole, peli on hävitty.
+    return best if best is not None else evaluate(board)
+
+
+def _chance_value(board, depth, cache):
+    """Chance-solmu: painotettu keskiarvo kaikista mahdollisista laatoista."""
     cells = empty_cells(board)
     if not cells:
         return evaluate(board)
 
-    # Chance-solmu: painotettu keskiarvo kaikista mahdollisista laatoista.
     total = 0
-    for r, c in cells:
+    for row, col in cells:
         for tile, probability in ((2, 0.9), (4, 0.1)):
-            board[r][c] = tile
-            total += probability * expectimax(board, depth - 1, True)
-            board[r][c] = 0
+            board[row][col] = tile
+            total += probability * expectimax(board, depth - 1, True, cache)
+            board[row][col] = 0
     return total / len(cells)
 
 
@@ -98,6 +127,7 @@ def best_move(board, depth=2):
         board: pelilauta.
         depth: montako tekoälyn siirtoa eteenpäin lasketaan.
     """
+    cache = {}
     best_direction = None
     best_value = None
     for direction in DIRECTIONS:
@@ -106,7 +136,7 @@ def best_move(board, depth=2):
             continue
         # Syvyys kerrotaan kahdella, koska yksi kierros on
         # tekoälyn siirto + satunnainen laatta.
-        value = expectimax(new_board, depth * 2 - 1, False)
+        value = expectimax(new_board, depth * 2 - 1, False, cache)
         if best_value is None or value > best_value:
             best_value = value
             best_direction = direction

@@ -3,7 +3,7 @@
 import random
 import unittest
 
-from src.ai import best_move, evaluate, expectimax, monotonicity
+from src.ai import board_key, best_move, evaluate, expectimax, monotonicity
 from src.main import play
 
 
@@ -57,6 +57,34 @@ class TestExpectimax(unittest.TestCase):
         copy = [row[:] for row in board]
         expectimax(board, 2, False)
         self.assertEqual(board, copy)
+
+
+class TestCache(unittest.TestCase):
+    def setUp(self):
+        self.board = [[2, 4, 0, 0], [0, 2, 0, 0], [0, 0, 0, 0], [0, 0, 0, 2]]
+
+    def test_avain_on_sama_samalle_laudalle(self):
+        copy = [row[:] for row in self.board]
+        self.assertEqual(board_key(self.board), board_key(copy))
+
+    def test_avain_kelpaa_dictiin(self):
+        cache = {board_key(self.board): 1}
+        self.assertIn(board_key(self.board), cache)
+
+    def test_valimuisti_antaa_saman_tuloksen(self):
+        without = expectimax(self.board, 3, False)
+        with_cache = expectimax(self.board, 3, False, {})
+        self.assertAlmostEqual(without, with_cache)
+
+    def test_valimuisti_tayttyy(self):
+        cache = {}
+        expectimax(self.board, 3, False, cache)
+        self.assertGreater(len(cache), 0)
+
+    def test_tallennettu_arvo_palautetaan(self):
+        # Jos arvo löytyy jo välimuistista, sitä ei lasketa uudelleen.
+        cache = {(board_key(self.board), 3, False): 12345}
+        self.assertEqual(expectimax(self.board, 3, False, cache), 12345)
 
 
 class TestBestMove(unittest.TestCase):
