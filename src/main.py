@@ -91,7 +91,7 @@ def main():
         print("q = lopeta")
         choice = input("Valinta: ").strip().lower()
         if choice == "1":
-            depth = ask_number("Hakusyvyys", 2)
+            depth = ask_number("Hakusyvyys pelin alussa", 2)
             tile, score, moves = play(depth)
             print(f"Peli päättyi. Suurin laatta: {tile}, pisteet: {score}, "
                   f"siirrot: {moves}\n")
@@ -99,7 +99,7 @@ def main():
             play_yourself()
         elif choice == "3":
             games = ask_number("Pelien määrä", 5)
-            depth = ask_number("Hakusyvyys", 2)
+            depth = ask_number("Hakusyvyys pelin alussa", 2)
             statistics(games, depth)
         elif choice == "q":
             break

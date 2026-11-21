@@ -1,53 +1,36 @@
-"""2048-pelin tekoäly: expectimax-haku ja heuristinen arviointifunktio.
+"""2048-pelin tekoäly: expectimax-haku ja käärmeheuristiikka.
 
 Tämä on harjoitustyön ydin.
 """
 
 from src.game import DIRECTIONS, SIZE, empty_cells, move
 
-# Heuristiikan painot. Näitä säädetään myöhemmin testaamalla.
-EMPTY_WEIGHT = 270
-CORNER_WEIGHT = 1.0
-MONOTONICITY_WEIGHT = 1.0
+# Käärmeheuristiikan järjestys: suurin paino vasemmassa yläkulmassa,
+# ja painot pienenevät mutkitellen rivi riviltä kuin käärme.
+SNAKE_ORDER = [
+    [15, 14, 13, 12],
+    [8, 9, 10, 11],
+    [7, 6, 5, 4],
+    [0, 1, 2, 3],
+]
 
+# Jokaisen ruudun paino on 4^järjestysnumero. Painot ovat jyrkkiä, jotta
+# yksi iso laatta oikeassa paikassa on arvokkaampi kuin monta pientä.
+SNAKE_WEIGHTS = [[4 ** n for n in row] for row in SNAKE_ORDER]
 
-def monotonicity(board):
-    """Laskee, kuinka hyvin laatat ovat suuruusjärjestyksessä.
-
-    Jokaiselle riville ja sarakkeelle lasketaan, kuinka paljon arvot
-    rikkovat kasvavaa tai laskevaa järjestystä. Parempi suunta otetaan
-    mukaan. Tulos on 0 tai negatiivinen: mitä lähempänä nollaa, sitä
-    paremmassa järjestyksessä laatat ovat.
-    """
-    total = 0
-    lines = list(board) + [list(col) for col in zip(*board)]
-    for line in lines:
-        increasing = 0
-        decreasing = 0
-        for i in range(SIZE - 1):
-            if line[i] > line[i + 1]:
-                decreasing += line[i] - line[i + 1]
-            else:
-                increasing += line[i + 1] - line[i]
-        total -= min(increasing, decreasing)
-    return total
+# Uuden laatan arvot ja niiden todennäköisyydet.
+TILE_PROBABILITIES = ((2, 0.9), (4, 0.1))
 
 
 def evaluate(board):
-    """Heuristinen arviointifunktio: mitä suurempi arvo, sitä parempi lauta.
+    """Käärmeheuristiikka: mitä suurempi arvo, sitä parempi lauta.
 
-    Huomioi tyhjien ruutujen määrän, suurimman laatan kulmassa olemisen
-    ja laattojen järjestyksen (monotonisuuden).
+    Jokainen laatta kerrotaan oman ruutunsa painolla ja tulot lasketaan
+    yhteen. Tekoäly pyrkii siis pitämään suurimman laatan kulmassa ja
+    muut laatat suuruusjärjestyksessä käärmeen muotoisella reitillä.
     """
-    empty = len(empty_cells(board))
-    biggest = max(max(row) for row in board)
-    corners = [board[0][0], board[0][SIZE - 1],
-               board[SIZE - 1][0], board[SIZE - 1][SIZE - 1]]
-    corner_bonus = biggest if biggest in corners else 0
-
-    return (EMPTY_WEIGHT * empty
-            + CORNER_WEIGHT * corner_bonus
-            + MONOTONICITY_WEIGHT * monotonicity(board))
+    return sum(board[r][c] * SNAKE_WEIGHTS[r][c]
+               for r in range(SIZE) for c in range(SIZE))
 
 
 def board_key(board):
@@ -58,75 +41,93 @@ def board_key(board):
     return tuple(tuple(row) for row in board)
 
 
-def expectimax(board, depth, is_max_turn, cache=None):
-    """Laskee laudan arvon expectimax-algoritmilla.
+def search_depth(board, base_depth):
+    """Valitsee hakusyvyyden sen mukaan, kuinka täynnä lauta on.
+
+    Kun tyhjiä ruutuja on vähän, satunnaisia vaihtoehtoja on vähän ja
+    haku on nopea, joten voidaan laskea syvemmälle.
 
     Args:
         board: pelilauta.
-        depth: montako tasoa vielä lasketaan eteenpäin.
-        is_max_turn: True, jos on tekoälyn vuoro (max-solmu),
-            False, jos on satunnaisen laatan vuoro (chance-solmu).
-        cache: hajautustaulu (dict), johon tallennetaan jo laskettujen
-            tilanteiden arvot. Jos None, välimuistia ei käytetä.
+        base_depth: käyttäjän antama syvyys, jota käytetään pelin alussa.
+    """
+    empty = len(empty_cells(board))
+    if empty >= 6:
+        return base_depth
+    if empty >= 3:
+        return base_depth + 1
+    return base_depth + 2
+
+
+def max_node(board, depth, cache):
+    """Tekoälyn vuoro: paras arvo kaikista mahdollisista siirroista.
+
+    Args:
+        board: pelilauta.
+        depth: montako tekoälyn siirtoa vielä lasketaan (vähintään 1).
+        cache: hajautustaulu jo lasketuille tilanteille.
 
     Returns:
-        Laudan arvo lukuna.
+        Parhaan siirron arvo, tai 0 jos siirtoja ei ole (peli hävitty).
     """
-    if depth == 0:
-        return evaluate(board)
-
-    key = None
-    if cache is not None:
-        key = (board_key(board), depth, is_max_turn)
-        if key in cache:
-            return cache[key]
-
-    if is_max_turn:
-        value = _max_value(board, depth, cache)
-    else:
-        value = _chance_value(board, depth, cache)
-
-    if cache is not None:
-        cache[key] = value
-    return value
-
-
-def _max_value(board, depth, cache):
-    """Max-solmu: paras arvo tekoälyn kaikista mahdollisista siirroista."""
     best = None
     for direction in DIRECTIONS:
         new_board, _, changed = move(board, direction)
         if not changed:
             continue
-        value = expectimax(new_board, depth - 1, False, cache)
+        value = chance_node(new_board, depth - 1, cache)
         if best is None or value > best:
             best = value
-    # Jos siirtoja ei ole, peli on hävitty.
-    return best if best is not None else evaluate(board)
+    return best if best is not None else 0
 
 
-def _chance_value(board, depth, cache):
-    """Chance-solmu: painotettu keskiarvo kaikista mahdollisista laatoista."""
+def chance_node(board, depth, cache):
+    """Satunnaisen laatan vuoro: odotusarvo kaikista mahdollisista laatoista.
+
+    Haku päättyy aina tekoälyn siirtoon: jos syvyys on 0, lauta arvioidaan
+    heti siirron jälkeen ennen uuden laatan lisäämistä.
+
+    Args:
+        board: pelilauta tekoälyn siirron jälkeen.
+        depth: montako tekoälyn siirtoa vielä lasketaan.
+        cache: hajautustaulu jo lasketuille tilanteille.
+
+    Returns:
+        Laudan odotusarvo.
+    """
+    if depth == 0:
+        return evaluate(board)
+
+    key = (board_key(board), depth)
+    if key in cache:
+        return cache[key]
+
     cells = empty_cells(board)
     if not cells:
         return evaluate(board)
 
     total = 0
-    for row, col in cells:
-        for tile, probability in ((2, 0.9), (4, 0.1)):
-            board[row][col] = tile
-            total += probability * expectimax(board, depth - 1, True, cache)
-            board[row][col] = 0
-    return total / len(cells)
+    for r, c in cells:
+        for tile, probability in TILE_PROBABILITIES:
+            board[r][c] = tile
+            total += probability * max_node(board, depth, cache)
+            board[r][c] = 0
+    value = total / len(cells)
+
+    cache[key] = value
+    return value
 
 
-def best_move(board, depth=2):
+def best_move(board, depth=2, adaptive=True):
     """Palauttaa parhaan siirtosuunnan, tai None jos siirtoja ei ole.
 
     Args:
         board: pelilauta.
-        depth: montako tekoälyn siirtoa eteenpäin lasketaan.
+        depth: montako tekoälyn siirtoa eteenpäin lasketaan pelin alussa.
+        adaptive: jos True, syvyyttä kasvatetaan laudan täyttyessä.
     """
+    if adaptive:
+        depth = search_depth(board, depth)
     cache = {}
     best_direction = None
     best_value = None
@@ -134,9 +135,7 @@ def best_move(board, depth=2):
         new_board, _, changed = move(board, direction)
         if not changed:
             continue
-        # Syvyys kerrotaan kahdella, koska yksi kierros on
-        # tekoälyn siirto + satunnainen laatta.
-        value = expectimax(new_board, depth * 2 - 1, False, cache)
+        value = chance_node(new_board, depth - 1, cache)
         if best_value is None or value > best_value:
             best_value = value
             best_direction = direction
