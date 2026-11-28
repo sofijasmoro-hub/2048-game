@@ -52,6 +52,12 @@ Kasvava syvyys perustuu siihen, että haarautumiskerroin 8e pienenee laudan täy
 - Käärmeen painot on valittu kokeilemalla. Eri painoja voisi verrata järjestelmällisesti.
 - Syvyydellä 1 tulokset vaihtelevat paljon pelistä toiseen.
 
+## Palautteen perusteella tehdyt muutokset
+
+- **Hakusyvyyden tarkistus:** vertaisarvioinnissa huomattiin, että syvyys 0 kaatoi ohjelman `RecursionError`-virheeseen. Nyt käyttöliittymä kysyy syvyyttä uudelleen, jos se on alle 1, ja `best_move` antaa selkeän `ValueError`-virheen, jos sitä kutsutaan syvyydellä 0.
+- **Nopeammat testit:** kokonaisen pelin pelaava testi korvattiin testillä, joka alkaa valmiista voittotilanteesta. Testien ajo nopeutui noin 3 sekunnista alle sekuntiin.
+- **Expectimaxin tarkka testi:** ohjaajan palautteen perusteella lisättiin testi, jossa expectimaxin arvo syvyydellä 2 on laskettu käsin koko hakupuusta.
+
 ## Laajojen kielimallien käyttö
 
 Käytin tekoälyä (Claude) koodin tarkistamiseen, että kaikki on oikein kirjoitettu eikä mitään ylimääräistä löydy.
