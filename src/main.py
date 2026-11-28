@@ -75,10 +75,19 @@ def statistics(games, depth):
         print(f"{tile:5}: {results[tile]} peliä")
 
 
-def ask_number(text, default):
-    """Kysyy käyttäjältä kokonaisluvun. Tyhjä tai virheellinen syöte -> oletus."""
-    answer = input(f"{text} [{default}]: ").strip()
-    return int(answer) if answer.isdigit() else default
+def ask_number(text, default, minimum=1):
+    """Kysyy käyttäjältä kokonaisluvun, joka on vähintään minimum.
+
+    Tyhjä syöte palauttaa oletusarvon. Virheellistä tai liian pientä
+    syötettä kysytään uudelleen.
+    """
+    while True:
+        answer = input(f"{text} [{default}]: ").strip()
+        if answer == "":
+            return default
+        if answer.isdigit() and int(answer) >= minimum:
+            return int(answer)
+        print(f"Anna kokonaisluku, joka on vähintään {minimum}.")
 
 
 def main():

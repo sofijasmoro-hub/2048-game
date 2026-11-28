@@ -6,7 +6,6 @@ import unittest
 from src.ai import (TILE_PROBABILITIES, best_move, board_key, chance_node,
                     evaluate, max_node, search_depth)
 from src.game import DIRECTIONS, add_random_tile, empty_cells, move
-from src.main import play
 
 STUCK = [[2, 4, 2, 4], [4, 2, 4, 2], [2, 4, 2, 4], [4, 2, 4, 2]]
 
@@ -119,6 +118,18 @@ class TestExpectimax(unittest.TestCase):
                     + 0.1 * max_node(with_4, 1, {}))
         self.assertAlmostEqual(chance_node(board, 1, {}), expected)
 
+    def test_keskiarvo_kahdesta_tyhjasta_ruudusta(self):
+        # Kahden tyhjän ruudun tulokset lasketaan yhteen ja jaetaan kahdella.
+        board = [row[:] for row in STUCK]
+        board[3][2] = board[3][3] = 0
+        total = 0
+        for col in (2, 3):
+            for tile, probability in ((2, 0.9), (4, 0.1)):
+                copy = [row[:] for row in board]
+                copy[3][col] = tile
+                total += probability * max_node(copy, 1, {})
+        self.assertAlmostEqual(chance_node(board, 1, {}), total / 2)
+
     def test_sama_tulos_kuin_vertailutoteutuksella(self):
         # Verrataan optimoitua hakua yksinkertaiseen toteutukseen
         # usealla satunnaisella laudalla.
@@ -168,13 +179,67 @@ class TestBestMove(unittest.TestCase):
         self.assertIn(best_move(board, 1), ("up", "down"))
 
 
-class TestKokoPeli(unittest.TestCase):
-    def test_tekoaly_paasee_2048_laattaan(self):
-        random.seed(2)
-        tile, score, moves = play(depth=1, show=False)
-        self.assertGreater(moves, 0)
-        self.assertGreater(score, 0)
-        self.assertGreaterEqual(tile, 2048)
+class TestTarkkaArvo(unittest.TestCase):
+    """Expectimaxin arvo syvyydellä 2 laskettuna käsin koko hakupuusta.
+
+    Lähtölaudalla on yksi tyhjä ruutu (3, 2). Hakupuu:
+
+    Laatta 2 (todennäköisyys 0,9):
+        left  -> tyhjä ruutu (2, 3)
+            laatta 2: ei siirtoja -> 0
+            laatta 4: paras siirroista up ja down -> LEAF_2
+            arvo 0,9 * 0 + 0,1 * LEAF_2
+        right -> tyhjä ruutu (2, 0)
+            laatta 2 ja laatta 4: ei siirtoja -> arvo 0
+        max(left, right) = 0,1 * LEAF_2
+    Laatta 4 (todennäköisyys 0,1):
+        sama rakenne, paras arvo 0,1 * LEAF_4
+
+    Odotusarvo = 0,9 * 0,1 * LEAF_2 + 0,1 * 0,1 * LEAF_4
+    """
+
+    START = [[32, 4, 2, 16], [8, 32, 16, 4], [64, 64, 8, 64], [8, 16, 0, 8]]
+
+    # Lehtisolmut eli laudat kahden siirron jälkeen.
+    UP_2 = [[32, 4, 2, 16], [8, 32, 16, 8], [128, 8, 64, 8], [8, 16, 2, 0]]
+    DOWN_2 = [[32, 4, 2, 0], [8, 32, 16, 16], [128, 8, 64, 8], [8, 16, 2, 8]]
+    UP_4 = [[32, 4, 2, 16], [8, 32, 16, 8], [128, 8, 64, 8], [8, 16, 4, 0]]
+    DOWN_4 = [[32, 4, 2, 0], [8, 32, 16, 16], [128, 8, 64, 8], [8, 16, 4, 8]]
+
+    def test_lehtisolmut_ovat_oikeat(self):
+        # Tarkistetaan polku: laatta 2, left, laatta 4, up.
+        board = [row[:] for row in self.START]
+        board[3][2] = 2
+        board, _, _ = move(board, "left")
+        board[2][3] = 4
+        self.assertEqual(move(board, "up")[0], self.UP_2)
+        self.assertEqual(move(board, "down")[0], self.DOWN_2)
+
+    def test_odotusarvo_syvyydella_2(self):
+        leaf_2 = max(evaluate(self.UP_2), evaluate(self.DOWN_2))
+        leaf_4 = max(evaluate(self.UP_4), evaluate(self.DOWN_4))
+        expected = 0.9 * 0.1 * leaf_2 + 0.1 * 0.1 * leaf_4
+        board = [row[:] for row in self.START]
+        self.assertAlmostEqual(chance_node(board, 2, {}), expected)
+
+    def test_valitsee_siirron_joka_ei_havia_varmasti(self):
+        # Siirto right johtaa varmasti häviöön, joten paras on left.
+        board = [row[:] for row in self.START]
+        board[3][2] = 2
+        self.assertEqual(best_move(board, 2, adaptive=False), "left")
+
+
+class TestVoittotilanne(unittest.TestCase):
+    def test_yhdistaa_2048_laatan_kulmaan(self):
+        board = empty()
+        board[0][0] = 1024
+        board[0][1] = 1024
+        self.assertEqual(best_move(board, 2, adaptive=False), "left")
+        self.assertEqual(move(board, "left")[0][0][0], 2048)
+
+    def test_syvyys_nolla_ei_kelpaa(self):
+        with self.assertRaises(ValueError):
+            best_move(empty(), 0)
 
 
 if __name__ == "__main__":

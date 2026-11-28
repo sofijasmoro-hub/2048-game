@@ -125,7 +125,12 @@ def best_move(board, depth=2, adaptive=True):
         board: pelilauta.
         depth: montako tekoälyn siirtoa eteenpäin lasketaan pelin alussa.
         adaptive: jos True, syvyyttä kasvatetaan laudan täyttyessä.
+
+    Raises:
+        ValueError: jos syvyys on pienempi kuin 1.
     """
+    if depth < 1:
+        raise ValueError("Hakusyvyyden pitää olla vähintään 1")
     if adaptive:
         depth = search_depth(board, depth)
     cache = {}
